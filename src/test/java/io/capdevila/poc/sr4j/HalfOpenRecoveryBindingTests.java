@@ -3,7 +3,7 @@ package io.capdevila.poc.sr4j;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.common.CompositeCustomizer;
 import io.github.resilience4j.common.circuitbreaker.configuration.CircuitBreakerConfigCustomizer;
-import io.github.resilience4j.springboot3.circuitbreaker.autoconfigure.CircuitBreakerProperties;
+import io.github.resilience4j.springboot.circuitbreaker.autoconfigure.CircuitBreakerProperties;
 import java.util.Collections;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;

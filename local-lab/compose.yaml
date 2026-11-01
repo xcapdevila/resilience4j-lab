@@ -2,7 +2,7 @@ name: r4j-lab
 
 services:
   app:
-    image: eclipse-temurin:21-jre@sha256:f37956012e0cb88400e5b3689aeae2d2d735364c1922ae2225536163b5a99f56
+    image: eclipse-temurin:25-jre@sha256:ecdc0adb37bde1a281c4d245a3cd535004b1fc8322d560f5b09463b248c81df0
     command: ["java", "-XX:MaxRAMPercentage=70", "-jar", "/opt/demo/app.jar"]
     environment:
       SPRING_PROFILES_ACTIVE: lab

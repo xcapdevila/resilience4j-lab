@@ -3,15 +3,19 @@ package io.capdevila.poc.sr4j;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import io.github.resilience4j.common.circuitbreaker.configuration.CircuitBreakerConfigCustomizer;
+import io.github.resilience4j.springboot.circuitbreaker.autoconfigure.CircuitBreakerAutoConfiguration;
+import io.github.resilience4j.springboot.verifier.autoconfigure.SpringBoot4Verifier;
+import io.github.resilience4j.springboot.verifier.autoconfigure.SpringBoot4VerifierAutoConfiguration;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.web.servlet.MockMvc;
@@ -38,6 +42,9 @@ class Sr4jApplicationTests {
     @Autowired
     private CircuitBreakerRegistry registry;
 
+    @Autowired
+    private ApplicationContext context;
+
     private CircuitBreaker circuitBreaker;
 
     @BeforeEach
@@ -45,6 +52,18 @@ class Sr4jApplicationTests {
         circuitBreaker = registry.circuitBreaker("DemoService.process");
         circuitBreaker.reset();
         assertThat(circuitBreaker.getCircuitBreakerConfig().getClock().instant()).isEqualTo(TEST_INSTANT);
+    }
+
+    @Test
+    void boot4AdapterAndVersionVerifierAreLoadedWithoutTheBoot3Adapter() {
+        assertThat(context.getBeansOfType(SpringBoot4VerifierAutoConfiguration.class)).hasSize(1);
+        assertThat(context.getBeansOfType(SpringBoot4Verifier.class)).hasSize(1);
+        assertThat(context.getBeansOfType(CircuitBreakerAutoConfiguration.class)).hasSize(1);
+        assertThat(CircuitBreakerAutoConfiguration.class.getProtectionDomain().getCodeSource().getLocation().getPath())
+            .contains("resilience4j-spring-boot4-").doesNotContain("resilience4j-spring-boot3-");
+        assertThat(getClass().getClassLoader().getResource(
+            "io/github/resilience4j/springboot3/circuitbreaker/autoconfigure/CircuitBreakerAutoConfiguration.class"))
+            .isNull();
     }
 
     @Test

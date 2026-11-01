@@ -18,8 +18,10 @@ CACHE = PROJECT / ".lab-cache"
 VERSION = os.environ.get("PHASED_VERSION", "3.0.0-phased-SNAPSHOT")
 LIBRARY_URL = os.environ.get("PHASED_LIBRARY_URL", "https://github.com/xcapdevila/resilience4j.git")
 LIBRARY_REF = os.environ.get("PHASED_LIBRARY_REF", "12a8bc6b6487e50af35a25759a20693965616ddf")
+APPLICATION_JAVA_MAJOR = 25
+LIBRARY_JAVA_MAJOR = 21
 LIBRARY_MODULES = ("core", "circularbuffer", "annotations", "consumer", "circuitbreaker", "bulkhead",
-                   "ratelimiter", "retry", "timelimiter", "micrometer", "framework-common", "spring6", "spring-boot3")
+                   "ratelimiter", "retry", "timelimiter", "micrometer", "framework-common", "spring6", "spring-boot4")
 REPOSITORY = Path(os.environ.get("PHASED_MAVEN_REPO", str(CACHE / "maven/repository"))).expanduser().resolve()
 OPENER = build_opener(ProxyHandler({}))
 
@@ -30,30 +32,41 @@ def run(command, *, cwd=PROJECT, env=None, capture=False):
                           stderr=subprocess.PIPE if capture else None)
 
 
-def java_environment():
+def java_environment(*, library=False):
+    """Select each build's JDK independently; never run the native Gradle build on 25."""
     env = os.environ.copy()
-    override = env.get("PHASED_JAVA_HOME")
+    for name in ("MAVEN_ARGS", "MAVEN_OPTS", "JAVA_OPTS", "GRADLE_OPTS", "JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS"):
+        env.pop(name, None)
+    major = LIBRARY_JAVA_MAJOR if library else APPLICATION_JAVA_MAJOR
+    setting = "PHASED_LIBRARY_JAVA_HOME" if library else "PHASED_JAVA_HOME"
+    purpose = "the Resilience4j library build" if library else "the application"
+    override = env.get(setting)
     candidates = [Path(override).expanduser() / "bin/java"] if override else []
     if not override:
         if env.get("JAVA_HOME"):
             candidates.append(Path(env["JAVA_HOME"]) / "bin/java")
         if sys.platform == "darwin":
-            located = subprocess.run(["/usr/libexec/java_home", "-v", "21"], capture_output=True, text=True)
+            located = subprocess.run(["/usr/libexec/java_home", "-v", str(major)], capture_output=True, text=True, env=env)
             if located.returncode == 0:
                 candidates.append(Path(located.stdout.strip()) / "bin/java")
         if shutil.which("java"):
             candidates.append(Path(shutil.which("java")).resolve())
+        if sys.platform.startswith("linux"):
+            for directory in (Path("/usr/lib/jvm"), Path("/usr/java")):
+                candidates.extend(sorted(directory.glob("*/bin/java")))
     for candidate in candidates:
         if not candidate.is_file() or not (candidate.parent / "javac").is_file():
             continue
-        version = subprocess.run([str(candidate), "-version"], capture_output=True, text=True)
-        if version.returncode == 0 and re.search(r'version "21(?:\.|\")', version.stdout + version.stderr):
+        version = subprocess.run([str(candidate), "-version"], capture_output=True, text=True, env=env)
+        compiler = subprocess.run([str(candidate.parent / "javac"), "-version"], capture_output=True, text=True, env=env)
+        if (version.returncode == 0 and compiler.returncode == 0
+                and re.search(rf'version "{major}(?:\.|\")', version.stdout + version.stderr)
+                and re.search(rf'\bjavac {major}(?:\.|\s|$)', compiler.stdout + compiler.stderr)):
             env["JAVA_HOME"] = str(candidate.parent.parent)
+            env["PATH"] = str(candidate.parent) + os.pathsep + env.get("PATH", "")
             break
     else:
-        raise RuntimeError("Java 21 is required. Set PHASED_JAVA_HOME to a JDK 21 directory.")
-    for name in ("MAVEN_ARGS", "MAVEN_OPTS", "JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS"):
-        env.pop(name, None)
+        raise RuntimeError(f"JDK {major} is required for {purpose}. Set {setting} to a JDK {major} directory.")
     env["MAVEN_SKIP_RC"] = "true"
     env["MAVEN_USER_HOME"] = str(CACHE / "maven")
     return env
@@ -105,7 +118,8 @@ def library_artifacts_present():
 
 def library_build_identity():
     return {"source": os.environ.get("PHASED_LIBRARY_DIR", LIBRARY_URL), "commit": LIBRARY_REF.lower(),
-            "version": VERSION, "repository": str(REPOSITORY)}
+            "version": VERSION, "repository": str(REPOSITORY),
+            "modules": list(LIBRARY_MODULES), "javaMajor": LIBRARY_JAVA_MAJOR}
 
 
 def ensure_library():
@@ -125,7 +139,7 @@ def ensure_library():
 
 def build_library(extra=()):
     library = library_source()
-    env = java_environment()
+    env = java_environment(library=True)
     for key in ("GPG_KEY", "GPG_PASSPHRASE"):
         env.pop(key, None)
     env["GRADLE_USER_HOME"] = str(Path(os.environ.get("PHASED_GRADLE_HOME", str(CACHE / "gradle"))).expanduser().resolve())

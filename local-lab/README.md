@@ -13,7 +13,8 @@ library sources, then run from the project root:
 ./local-lab/lab.sh start
 ```
 
-Use Java 21, Python 3.9+, Git and a running local Docker engine with Compose. The
+Use JDK 25 for the application, JDK 21 for building the pinned library, Python 3.9+,
+Git and a running local Docker engine with Compose. The
 launcher targets macOS, Linux and WSL with a local Docker Unix socket. It obtains
 Maven through the checked-in wrapper. `bootstrap` prepares the pinned public library,
 application and dashboards without starting containers. `start` also prepares missing
@@ -37,11 +38,15 @@ external business service.
 
 The default library source is the public `xcapdevila/resilience4j` fork at the full
 commit pinned in the [project quick start](../README.md#quick-start). The custom
-artifact version is `3.0.0-phased-SNAPSHOT`.
+artifact version is `3.0.0-phased-SNAPSHOT`. The application uses Spring Boot 4 and
+the library's `resilience4j-spring-boot4` adapter. The library's source baseline and
+Gradle build remain on Java 21; application compilation, tests and the container
+runtime use Java 25.
 
 | Setting | Default / purpose |
 |---|---|
-| `PHASED_JAVA_HOME` | Optional JDK 21 directory; otherwise use a detected Java 21 installation |
+| `PHASED_JAVA_HOME` | Optional application JDK 25 directory; otherwise detect JDK 25 |
+| `PHASED_LIBRARY_JAVA_HOME` | Optional library-build JDK 21 directory; otherwise detect JDK 21 independently |
 | `PHASED_LIBRARY_URL` | `https://github.com/xcapdevila/resilience4j.git` |
 | `PHASED_LIBRARY_REF` | Full 40-character commit ID; defaults to the pinned public revision |
 | `PHASED_LIBRARY_DIR` | Optional existing library checkout instead of managed `.lab-cache/sources/resilience4j` |
@@ -55,6 +60,22 @@ and `test` prepare missing library artifacts; `build-library` explicitly rebuild
 them. A selected prebuilt Maven repository can supply all required library JARs and
 POMs without a source build. The packaged application is
 `target/resilience4j-lab.jar`.
+
+Each build checks both the Java runtime and compiler version. Detection considers
+`JAVA_HOME`, the active `java` command, macOS JDK discovery and standard Linux JDK
+directories. An explicit JDK override must match its required major version; it does
+not silently fall back to another installation. For example:
+
+```sh
+export PHASED_JAVA_HOME=/path/to/jdk-25
+export PHASED_LIBRARY_JAVA_HOME=/path/to/jdk-21
+./local-lab/lab.sh bootstrap
+```
+
+A complete prebuilt artifact repository avoids the native source build and its JDK
+21 requirement. The application still needs JDK 25. The native cache stamp records
+the module set and library JDK major, so a previous Boot 3 cache is rebuilt when the
+Boot 4 adapter is needed.
 
 The managed source cache is checked out at the selected commit. The launcher refuses
 dirty tracked source files. An explicit `PHASED_LIBRARY_DIR` is never reset and must
@@ -240,6 +261,7 @@ export LAB_GRAFANA_PORT=13000
 
 - `lab.sh`: project-local launcher, build and test entry point.
 - `lab.py`: launcher implementation using an isolated Maven repository and explicit settings.
+- `test_launcher.py`: offline checks for source isolation, separate JDK selection and native artifact cache validity.
 - `verify-lab.py`: checks the running application, Prometheus and Grafana.
 - `test_verify_lab.py`: offline fixtures for trial isolation, fast phases, initial 100%, idle traffic and counter-scrape timing.
 - `compose.yaml`: the three services and this project's volumes.
@@ -252,4 +274,4 @@ export LAB_GRAFANA_PORT=13000
 
 The dashboard sources come from the public Resilience4j fork: `grafana_recovery_dashboard.json` is tracked as `dashboards/recovery.json`, and `grafana_dashboard.json` as `dashboards/classic.json`. See [NOTICE](../NOTICE) for attribution. Dashboard generation reads these checked-in copies and records their hashes in its manifest. Review and refresh the source copies explicitly when updating dashboards. `prepare-dashboard.py --source PATH --classic-source PATH` can generate a trial from other source files.
 
-The container images use fixed multi-architecture digests with ARM64 support: Grafana 13.2.4, Prometheus 3.15.1 and Eclipse Temurin Java 21 JRE. Sources: [Grafana](https://github.com/grafana/grafana/releases/tag/v13.2.4), [Prometheus](https://github.com/prometheus/prometheus/releases/tag/v3.15.1) and [official Temurin image](https://hub.docker.com/_/eclipse-temurin).
+The container images use fixed multi-architecture digests with ARM64 support: Grafana 13.2.4, Prometheus 3.15.1 and Eclipse Temurin Java 25 JRE. Sources: [Grafana](https://github.com/grafana/grafana/releases/tag/v13.2.4), [Prometheus](https://github.com/prometheus/prometheus/releases/tag/v3.15.1) and [official Temurin image](https://hub.docker.com/_/eclipse-temurin).

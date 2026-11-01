@@ -1,8 +1,8 @@
 package io.capdevila.poc.sr4j.lab;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -14,9 +14,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.actuate.observability.AutoConfigureObservability;
+import org.springframework.boot.micrometer.metrics.test.autoconfigure.AutoConfigureMetrics;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.resttestclient.TestRestTemplate;
+import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.context.ActiveProfiles;
@@ -29,8 +30,9 @@ import static org.awaitility.Awaitility.await;
     "lab.test.extended-controls=true",
     "resilience4j.circuitbreaker.configs.default.waitDurationInOpenState=30s"
 })
+@AutoConfigureTestRestTemplate
 @ActiveProfiles("lab")
-@AutoConfigureObservability
+@AutoConfigureMetrics
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class ExtendedLabControlsIntegrationTests {
     @Autowired LabTrafficService traffic;
@@ -43,9 +45,10 @@ class ExtendedLabControlsIntegrationTests {
     @BeforeAll
     void captureTheApplicationsConfiguredDefaults() {
         defaults = mapper.createObjectNode();
-        status().path("configuration").fields().forEachRemaining(entry -> {
-            if (!Set.of("revision", "trialRevision", "instanceId", "trialStartedAtEpochMillis").contains(entry.getKey()))
-                defaults.set(entry.getKey(), entry.getValue());
+        JsonNode configuration = status().path("configuration");
+        configuration.propertyNames().forEach(name -> {
+            if (!Set.of("revision", "trialRevision", "instanceId", "trialStartedAtEpochMillis").contains(name))
+                defaults.set(name, configuration.get(name));
         });
     }
 
@@ -85,7 +88,7 @@ class ExtendedLabControlsIntegrationTests {
         assertThat(after.path("trialRevision")).isEqualTo(before.path("trialRevision"));
         assertThat(after.path("trialStartedAtEpochMillis").asLong()).isPositive()
             .isEqualTo(before.path("trialStartedAtEpochMillis").asLong());
-        assertThat(after.path("instanceId").asText()).isNotBlank().isEqualTo(before.path("instanceId").asText());
+        assertThat(after.path("instanceId").asString()).isNotBlank().isEqualTo(before.path("instanceId").asString());
         assertThat(registry.circuitBreaker(LabTrafficService.SMART)).isSameAs(smart);
         assertThat(registry.circuitBreaker(LabTrafficService.STANDARD)).isSameAs(standard);
         assertThat(smart.getState()).isEqualTo(CircuitBreaker.State.HALF_OPEN);
@@ -93,7 +96,7 @@ class ExtendedLabControlsIntegrationTests {
         assertThat(smart.getMetrics().getNumberOfBufferedCalls()).isEqualTo(2);
         assertThat(smart.getAdmissionMetrics().getNumberOfAttempts()).isEqualTo(attempts);
         assertThat(response.getBody().path("requestedRatePerCircuit").asInt()).isEqualTo(3);
-        assertThat(response.getBody().path("scenario").asText()).isEqualTo("pause");
+        assertThat(response.getBody().path("scenario").asString()).isEqualTo("pause");
     }
 
     @Test

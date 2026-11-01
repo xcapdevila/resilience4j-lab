@@ -1,6 +1,6 @@
 # Resilience4j lab
 
-Run a Spring Boot application, generate traffic and inspect circuit recovery in a
+Run a Spring Boot 4.1.2 application on Java 25, generate traffic and inspect circuit recovery in a
 local Grafana dashboard. Two independent circuit breakers exercise the same simulated
 dependency: standard Resilience4j finite-probe recovery and an opt-in gradual policy.
 
@@ -16,7 +16,8 @@ admission. Standard recovery remains available without the gradual policy.
 
 ## Quick start
 
-Install Git, a JDK 21, Python 3.9+ and a running local Docker engine with Compose.
+Install Git, JDK 25 for the application, JDK 21 for the Resilience4j source build,
+Python 3.9+ and a running local Docker engine with Compose.
 The launcher supports macOS, Linux and WSL with a local Docker Unix socket. It uses
 the checked-in Maven wrapper, so a separate Maven installation is unnecessary.
 
@@ -27,10 +28,14 @@ cd resilience4j-lab
 ./local-lab/lab.sh start
 ```
 
-If Java 21 is not selected, set `PHASED_JAVA_HOME=/path/to/jdk-21` before running the
-commands. `bootstrap` fetches the public library at the pinned revision
+The launcher selects the two JDKs independently. If automatic discovery needs help,
+set `PHASED_JAVA_HOME=/path/to/jdk-25` and
+`PHASED_LIBRARY_JAVA_HOME=/path/to/jdk-21` before running the commands. Application
+builds and tests use Java 25; the pinned library's Gradle build stays on Java 21.
+`bootstrap` fetches the public library at the pinned revision
 [`12a8bc6b6487e50af35a25759a20693965616ddf`](https://github.com/xcapdevila/resilience4j/commit/12a8bc6b6487e50af35a25759a20693965616ddf),
-installs its custom `3.0.0-phased-SNAPSHOT` artifacts, builds the application and
+installs its custom `3.0.0-phased-SNAPSHOT` artifacts with the Spring Boot 4 adapter,
+builds the application and
 prepares the dashboards. Sources and build caches stay under this project's
 `.lab-cache/`. `start` also prepares missing prerequisites and downloads the container
 images. Later runs reuse the cache and service data volumes.
@@ -149,6 +154,12 @@ python3 -m unittest discover -s local-lab -p 'test_*.py'
 recovery, paused traffic or insufficient samples can legitimately produce an
 `INCOMPLETE` result within its wait budget. `stop` preserves the local data volumes.
 Build dependencies, fetched sources, generated dashboards and reports are ignored.
+
+The Java 25 / Spring Boot 4.1.2 migration was validated locally on 1 November 2026:
+103 application tests, 20 offline script checks and 22 live application/Prometheus/
+Grafana checks passed. The application uses the native Boot 4 adapter; its 13 pinned
+library modules still compile with JDK 21 and produce Java 21 class files. These
+checks verify this stack, rather than promise compatibility with future releases.
 
 For source overrides, alternative ports and manual dashboard import, see the
 [lab guide](local-lab/README.md).

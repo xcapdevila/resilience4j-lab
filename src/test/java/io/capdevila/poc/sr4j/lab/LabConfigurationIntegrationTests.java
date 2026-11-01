@@ -1,6 +1,6 @@
 package io.capdevila.poc.sr4j.lab;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -11,9 +11,10 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.actuate.observability.AutoConfigureObservability;
+import org.springframework.boot.micrometer.metrics.test.autoconfigure.AutoConfigureMetrics;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.resttestclient.TestRestTemplate;
+import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -28,8 +29,9 @@ import static org.awaitility.Awaitility.await;
     "lab.autostart=false",
     "resilience4j.circuitbreaker.configs.default.waitDurationInOpenState=30s"
 })
+@AutoConfigureTestRestTemplate
 @ActiveProfiles("lab")
-@AutoConfigureObservability
+@AutoConfigureMetrics
 class LabConfigurationIntegrationTests {
     private static final String ATTEMPTS = "resilience4j.circuitbreaker.admission.attempts";
     private static final String TARGET = "resilience4j.circuitbreaker.recovery.traffic.percentage";
@@ -76,7 +78,7 @@ class LabConfigurationIntegrationTests {
         assertThat(response.getBody().path("configuration").path("trafficPercentageStep").asInt()).isEqualTo(50);
         assertThat(response.getBody().path("configuration").path("minimumPhaseDurationMillis").asLong()).isEqualTo(1_234);
         assertThat(response.getBody().path("configuration").path("revision").asLong()).isEqualTo(revision + 1);
-        assertThat(response.getBody().path("scenario").asText()).isEqualTo("pause");
+        assertThat(response.getBody().path("scenario").asString()).isEqualTo("pause");
 
         var replacement = registry.circuitBreaker(LabTrafficService.SMART);
         assertThat(replacement).isNotSameAs(oldSmart);
@@ -187,7 +189,7 @@ class LabConfigurationIntegrationTests {
 
         var response = configure(30, 200);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(response.getBody().path("scenario").asText()).isEqualTo("outage");
+        assertThat(response.getBody().path("scenario").asString()).isEqualTo("outage");
         assertThat(response.getBody().path("running").asBoolean()).isTrue();
         var replacement = registry.circuitBreaker(LabTrafficService.SMART);
         assertThat(replacement).isNotSameAs(oldSmart);
@@ -220,7 +222,7 @@ class LabConfigurationIntegrationTests {
             assertThat(configure(25, 200, strategy).getStatusCode()).isEqualTo(HttpStatus.OK);
             var response = configure(50, 300);
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-            assertThat(response.getBody().path("configuration").path("failureStrategy").asText())
+            assertThat(response.getBody().path("configuration").path("failureStrategy").asString())
                 .isEqualTo(strategy);
             assertThat(registry.circuitBreaker(LabTrafficService.SMART).getCircuitBreakerConfig()
                 .getHalfOpenRecoveryConfig().getFailureStrategy().name()).isEqualTo(strategy);
@@ -274,7 +276,7 @@ class LabConfigurationIntegrationTests {
         var response = configure(50, 300);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody().path("configuration").path("minimumNumberOfCalls").asInt()).isEqualTo(37);
-        assertThat(response.getBody().path("configuration").path("failureStrategy").asText()).isEqualTo("OPEN");
+        assertThat(response.getBody().path("configuration").path("failureStrategy").asString()).isEqualTo("OPEN");
         assertThat(registry.circuitBreaker(LabTrafficService.SMART).getCircuitBreakerConfig()
             .getHalfOpenRecoveryConfig().getMinimumNumberOfCalls()).isEqualTo(37);
     }
@@ -293,7 +295,7 @@ class LabConfigurationIntegrationTests {
     private void assertActualUnhealthyPhase(String strategy) {
         var response = configure(50, 100, strategy);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(response.getBody().path("configuration").path("failureStrategy").asText())
+        assertThat(response.getBody().path("configuration").path("failureStrategy").asString())
             .isEqualTo(strategy);
         var smart = registry.circuitBreaker(LabTrafficService.SMART);
         assertThat(smart.getCircuitBreakerConfig().getHalfOpenRecoveryConfig().getFailureStrategy().name())

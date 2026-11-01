@@ -5,9 +5,10 @@ import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import java.time.Duration;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.actuate.observability.AutoConfigureObservability;
+import org.springframework.boot.micrometer.metrics.test.autoconfigure.AutoConfigureMetrics;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.resttestclient.TestRestTemplate;
+import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -17,8 +18,9 @@ import static org.awaitility.Awaitility.await;
     "lab.autostart=false",
     "resilience4j.circuitbreaker.configs.default.waitDurationInOpenState=30s"
 })
+@AutoConfigureTestRestTemplate
 @ActiveProfiles("lab")
-@AutoConfigureObservability
+@AutoConfigureMetrics
 class LiveLabIntegrationTests {
     @Autowired LabTrafficService traffic;
     @Autowired CircuitBreakerRegistry registry;

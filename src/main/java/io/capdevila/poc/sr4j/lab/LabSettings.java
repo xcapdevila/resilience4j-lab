@@ -1,6 +1,6 @@
 package io.capdevila.poc.sr4j.lab;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import java.lang.reflect.RecordComponent;
 import java.util.HashMap;
@@ -76,7 +76,7 @@ public record LabSettings(
             RecordComponent[] components = LabSettings.class.getRecordComponents();
             Map<String, RecordComponent> fields = new HashMap<>();
             for (var component : components) fields.put(component.getName(), component);
-            request.fieldNames().forEachRemaining(name -> {
+            request.propertyNames().forEach(name -> {
                 if (!fields.containsKey(name) && !Set.of("restartTrial", "revision", "trialRevision", "instanceId", "trialStartedAtEpochMillis").contains(name))
                     throw invalid("Unknown setting: " + name);
             });
@@ -102,7 +102,7 @@ public record LabSettings(
         if (type == long.class && value.isIntegralNumber() && value.canConvertToLong()) return value.longValue();
         if (type == double.class && value.isNumber() && Double.isFinite(value.doubleValue())) return value.doubleValue();
         if (type == boolean.class && value.isBoolean()) return value.booleanValue();
-        if (type == String.class && value.isTextual()) return value.textValue();
+        if (type == String.class && value.isString()) return value.stringValue();
         throw invalid("Invalid JSON type for " + name);
     }
 
