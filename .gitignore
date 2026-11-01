@@ -1,0 +1,17 @@
+# Build output and local dependency/source caches
+/target/
+/.lab-cache/
+/local-lab/generated/
+__pycache__/
+*.py[cod]
+
+# Local settings and editor state
+.env
+.env.*
+.DS_Store
+.idea/
+.vscode/
+*.iml
+.classpath
+.project
+.settings/

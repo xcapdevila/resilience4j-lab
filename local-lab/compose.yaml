@@ -1,0 +1,112 @@
+name: r4j-lab
+
+services:
+  app:
+    image: eclipse-temurin:21-jre@sha256:f37956012e0cb88400e5b3689aeae2d2d735364c1922ae2225536163b5a99f56
+    command: ["java", "-XX:MaxRAMPercentage=70", "-jar", "/opt/demo/app.jar"]
+    environment:
+      SPRING_PROFILES_ACTIVE: lab
+      LAB_GRAFANA_URL: http://localhost:${LAB_GRAFANA_PORT:-3000}/d/r4j-local-lab
+      LAB_PROMETHEUS_URL: http://localhost:${LAB_PROMETHEUS_PORT:-9090}
+      LAB_DASHBOARD_FILE: /opt/lab/import-dashboard.json
+    volumes:
+      - type: bind
+        source: ../target/resilience4j-lab.jar
+        target: /opt/demo/app.jar
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./generated/import-dashboard.json
+        target: /opt/lab/import-dashboard.json
+        read_only: true
+        bind:
+          create_host_path: false
+    ports:
+      - "127.0.0.1:${LAB_APP_PORT:-8080}:8080"
+    mem_limit: 768m
+    stop_grace_period: 20s
+    restart: unless-stopped
+    healthcheck:
+      # Readiness stays UP when either circuit opens; aggregate actuator health does not.
+      test:
+        - CMD-SHELL
+        - >-
+          bash -ec 'exec 3<>/dev/tcp/127.0.0.1/8080;
+          printf "GET /demo/lab/api/status HTTP/1.0\r\nHost: localhost\r\n\r\n" >&3;
+          head -n 1 <&3 | grep -q " 200 "'
+      interval: 5s
+      timeout: 3s
+      start_period: 45s
+      retries: 12
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "2"
+
+  prometheus:
+    image: prom/prometheus:v3.15.1@sha256:fa3302279710be2f21a8301ec17a8b4f2301fd829bd113839b3b6b02b6f191a2
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=6h
+      - --storage.tsdb.retention.size=512MB
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:${LAB_PROMETHEUS_PORT:-9090}:9090"
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:9090/-/ready >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "2"
+
+  grafana:
+    image: grafana/grafana:13.2.4@sha256:dbbc38ea21103cefb50396340cd88afec779c7e070b0a7bf5a75b4ce46651d3f
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: local-demo
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/dashboard.json
+      GF_DASHBOARDS_MIN_REFRESH_INTERVAL: 1s
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+    volumes:
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./generated/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:${LAB_GRAFANA_PORT:-3000}:3000"
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:3000/api/health >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "2"
+
+volumes:
+  prometheus-data:
+  grafana-data:

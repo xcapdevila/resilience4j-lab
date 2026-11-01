@@ -1,0 +1,31 @@
+Resilience4j lab
+
+This project is distributed under the Apache License, Version 2.0.
+
+Resilience4j dashboard sources
+-----------------------------
+The files local-lab/dashboards/classic.json and
+local-lab/dashboards/recovery.json are unmodified copies of grafana_dashboard.json
+and grafana_recovery_dashboard.json from the public Resilience4j fork:
+https://github.com/xcapdevila/resilience4j
+
+Resilience4j upstream attribution:
+Copyright 2020 Robert Winkler, Bohdan Storozhuk, Mahmoud Romeh, Dan Maas and others.
+https://github.com/resilience4j/resilience4j
+Licensed under the Apache License, Version 2.0.
+
+local-lab/prepare-dashboard.py adapts generated copies for this lab. The checked-in
+source dashboards retain their original contents; generated copies add local
+provisioning, combined views and traffic-generator panels.
+
+Apache Maven Wrapper
+--------------------
+This project includes Apache Maven Wrapper 3.3.2 scripts and configuration.
+These files retain their Apache Software Foundation license headers.
+This product includes software developed at The Apache Software Foundation
+(https://www.apache.org/).
+https://maven.apache.org/tools/wrapper/
+Licensed under the Apache License, Version 2.0.
+
+Other dependencies and container images retain their respective licenses and
+notices. Their inclusion does not imply endorsement of this lab.

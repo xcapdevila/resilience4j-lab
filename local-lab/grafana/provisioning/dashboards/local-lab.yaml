@@ -1,0 +1,13 @@
+apiVersion: 1
+
+providers:
+  - name: resilience4j-local-lab
+    orgId: 1
+    folder: Resilience4j local lab
+    type: file
+    disableDeletion: false
+    # Polling supports bind-mounted files on Rancher Desktop and Docker Desktop.
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
