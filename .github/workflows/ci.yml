@@ -1,0 +1,183 @@
+name: Lab validation
+
+on:
+  push:
+    branches: [main]
+    tags: ['v[0-9]*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: lab-validation-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  scripts:
+    name: Offline launcher and dashboard checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: '3.13'
+      - name: Run offline checks
+        run: python3 -m unittest discover -s local-lab -p 'test_*.py' -v
+
+  integration:
+    name: Clean build and live recovery lab
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      LAB_APP_PORT: '18080'
+      LAB_PROMETHEUS_PORT: '19090'
+      LAB_GRAFANA_PORT: '13000'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: '3.13'
+      - name: Install the library build JDK
+        id: library-java
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+        with:
+          distribution: temurin
+          java-version: '21'
+          overwrite-settings: false
+      - name: Install the application JDK
+        id: application-java
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+        with:
+          distribution: temurin
+          java-version: '25'
+          overwrite-settings: false
+      - name: Select separate JDKs
+        env:
+          LIBRARY_JAVA: ${{ steps.library-java.outputs.path }}
+          APPLICATION_JAVA: ${{ steps.application-java.outputs.path }}
+        run: |
+          echo "PHASED_LIBRARY_JAVA_HOME=$LIBRARY_JAVA" >> "$GITHUB_ENV"
+          echo "PHASED_JAVA_HOME=$APPLICATION_JAVA" >> "$GITHUB_ENV"
+      - name: Build the pinned public library and application
+        run: |
+          mkdir -p .lab-cache/ci
+          ./local-lab/lab.sh bootstrap 2>&1 | tee .lab-cache/ci/bootstrap.log
+      - name: Run application tests
+        run: ./local-lab/lab.sh test 2>&1 | tee .lab-cache/ci/application-tests.log
+      - name: Start the real application, Prometheus and Grafana
+        run: ./local-lab/lab.sh start 2>&1 | tee .lab-cache/ci/start.log
+      - name: Verify an automatic outage and recovery cycle
+        run: ./local-lab/lab.sh verify --wait-seconds 180 --output .lab-cache/ci/cycle-verification.json
+      - name: Start a fresh STEP_BACK trial
+        run: |
+          curl --fail --silent --show-error \
+            --header 'Content-Type: application/json' \
+            --data '{"trafficPercentageStep":25,"minimumPhaseDurationMillis":2000,"failureStrategy":"STEP_BACK","restartTrial":true}' \
+            "http://localhost:$LAB_APP_PORT/demo/lab/api/configuration" \
+            > .lab-cache/ci/step-back-configuration.json
+          ./local-lab/lab.sh scenario step-back
+      - name: Verify recovery after a real phase regression
+        run: |
+          ./local-lab/lab.sh verify --wait-seconds 180 --output .lab-cache/ci/step-back-verification.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(Path('.lab-cache/ci/step-back-verification.json').read_text())
+          regressions = [event for event in report['actualTransitionEvents']
+                         if event['name'] == 'DemoService.process'
+                         and event['type'] == 'HALF_OPEN_PHASE_TRANSITION'
+                         and 0 < int(event['to']) < int(event['from'])]
+          if not regressions:
+              raise SystemExit('No native STEP_BACK phase regression was observed in the current trial')
+          print('Observed native STEP_BACK regressions:', len(regressions))
+          PY
+      - name: Capture diagnostics
+        if: always()
+        run: |
+          mkdir -p .lab-cache/ci
+          docker compose --project-name r4j-lab --file local-lab/compose.yaml ps --all \
+            > .lab-cache/ci/compose-status.txt 2>&1 || true
+          docker compose --project-name r4j-lab --file local-lab/compose.yaml logs --no-color \
+            > .lab-cache/ci/compose.log 2>&1 || true
+      - name: Upload test reports and live evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: lab-validation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .lab-cache/ci/
+            target/surefire-reports/
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Stop the disposable CI stack
+        if: always()
+        run: docker compose --project-name r4j-lab --file local-lab/compose.yaml down --volumes --remove-orphans
+
+  release:
+    name: Publish a validated tagged release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: [scripts, integration]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate the release tag
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+      - name: Prepare the importable lab dashboard
+        run: python3 local-lab/prepare-dashboard.py
+      - name: Create the release and attach the dashboard
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          release_tmp="$(mktemp -d)"
+          if gh release view "$RELEASE_TAG" --json body --jq .body > "$release_tmp/existing-notes.md"; then
+            if ! grep -Fxq -- \
+                "Source commit: $GITHUB_SHA" "$release_tmp/existing-notes.md"; then
+              echo '::error::The existing release does not record this source commit; nothing was changed.'
+              exit 1
+            fi
+            gh release download "$RELEASE_TAG" --pattern import-dashboard.json --dir "$release_tmp"
+            if ! cmp -s local-lab/generated/import-dashboard.json "$release_tmp/import-dashboard.json"; then
+              echo '::error::The existing release dashboard differs from this validated source; nothing was changed.'
+              exit 1
+            fi
+            echo "Release $RELEASE_TAG already contains this source commit and dashboard; nothing was changed."
+            exit 0
+          fi
+
+          if [[ -f "docs/releases/$RELEASE_TAG.md" ]]; then
+            cp "docs/releases/$RELEASE_TAG.md" "$release_tmp/notes.md"
+          else
+            gh api --method POST "repos/$GH_REPO/releases/generate-notes" \
+              --field tag_name="$RELEASE_TAG" --field target_commitish="$GITHUB_SHA" \
+              --jq .body > "$release_tmp/notes.md"
+          fi
+          printf '\nSource commit: %s\n' "$GITHUB_SHA" >> "$release_tmp/notes.md"
+          gh release create "$RELEASE_TAG" \
+            --verify-tag --notes-file "$release_tmp/notes.md" \
+            --title "Resilience4j lab $RELEASE_TAG" \
+            local-lab/generated/import-dashboard.json
