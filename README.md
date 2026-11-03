@@ -14,6 +14,19 @@ This lab builds that custom version from source. The public circuit state stays
 `HALF_OPEN` throughout the ramp; additional metrics show the target and actual
 admission. Standard recovery remains available without the gradual policy.
 
+## Preview
+
+Change traffic, phase duration, sample size and failure strategy from the running
+application. These are screenshots of the real local stack with synthetic traffic.
+
+![Recovery controls with 25-point steps, sample gates and STEP_BACK](docs/images/lab-controls.png)
+
+Grafana compares the standard and gradual state histories and shows the configured
+recovery target alongside observed admission. This capture includes repeated outage
+and recovery cycles; the selected circuit is CLOSED at the end of the time range.
+
+![Grafana state histories, gradual admission targets and actual permitted traffic](docs/images/grafana-recovery.png)
+
 ## Quick start
 
 Install Git, JDK 25 for the application, JDK 21 for the Resilience4j source build,
@@ -160,6 +173,22 @@ The Java 25 / Spring Boot 4.1.2 migration was validated locally on 1 November 20
 Grafana checks passed. The application uses the native Boot 4 adapter; its 13 pinned
 library modules still compile with JDK 21 and produce Java 21 class files. These
 checks verify this stack, rather than promise compatibility with future releases.
+
+## Automated validation and releases
+
+The [Lab validation workflow](.github/workflows/ci.yml) runs on pull requests, pushes
+to `main`, manual requests and version tags. It checks the offline scripts, builds
+the pinned public library with Java 21, builds and tests the application with Java
+25, and starts the actual application, Prometheus and Grafana. Live checks cover an
+automatic outage/recovery cycle and a fresh `STEP_BACK` trial with an observed native
+phase regression. Build logs, test reports and live verification results are retained
+as workflow artifacts for seven days, including failed runs.
+
+A `vMAJOR.MINOR.PATCH` tag on a commit already in `main` can publish a GitHub release
+only after those checks pass. The release includes the importable dashboard JSON;
+GitHub provides source archives. A lab release versions this companion application,
+not an official Resilience4j release. See the [release guide](docs/RELEASING.md) and
+the [prepared first-release notes](docs/releases/v0.1.0.md).
 
 For source overrides, alternative ports and manual dashboard import, see the
 [lab guide](local-lab/README.md).
